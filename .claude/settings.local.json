@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker-compose up:*)",
+      "Bash(docker-compose ps:*)",
+      "Bash(docker-compose exec:*)",
+      "Bash(docker-compose logs:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(tasklist:*)",
+      "Bash(powershell \"Get-Process -Id 85648 | Select-Object Id, ProcessName, Path\")",
+      "Bash(docker-compose down:*)",
+      "Bash(powershell \"Invoke-WebRequest -Uri ''http://localhost:8001/admin/'' -UseBasicParsing -TimeoutSec 5 | Select-Object StatusCode, StatusDescription\")",
+      "Bash(powershell \"Invoke-WebRequest -Uri ''http://localhost:3000/'' -UseBasicParsing -TimeoutSec 5 | Select-Object StatusCode\")",
+      "Bash(docker-compose restart:*)",
+      "Bash(powershell \"Invoke-WebRequest -Uri ''http://localhost:8001/admin/'' -UseBasicParsing -TimeoutSec 5 | Select-Object StatusCode\")",
+      "Bash(git init:*)",
+      "Bash(git remote add:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
