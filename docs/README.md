@@ -16,6 +16,11 @@ Development guides and technical documentation.
 
 - **[CLAUDE.md](development/CLAUDE.md)** - AI assistant guidelines for working with this codebase
 
+### `/deployment`
+Production deployment guides for various platforms.
+
+- **[RAILWAY.md](deployment/RAILWAY.md)** - Railway deployment guide (RECOMMENDED) - Complete step-by-step guide
+
 ### `/archive`
 Historical documentation and completed fixes (kept for reference).
 
@@ -25,6 +30,7 @@ Historical documentation and completed fixes (kept for reference).
 
 - **Main README**: [../README.md](../README.md) - Project overview and primary documentation
 - **Getting Started**: [setup/QUICK_START_GUIDE.md](setup/QUICK_START_GUIDE.md)
+- **Deploy to Production**: [deployment/RAILWAY.md](deployment/RAILWAY.md)
 - **Troubleshooting**: [setup/DOCKER-TROUBLESHOOTING.md](setup/DOCKER-TROUBLESHOOTING.md)
 
 ## Contributing
@@ -32,5 +38,6 @@ Historical documentation and completed fixes (kept for reference).
 When adding new documentation:
 1. Place setup guides in `/setup`
 2. Place development guides in `/development`
-3. Move outdated docs to `/archive` (don't delete - keep for history)
-4. Update this README with links to new documents
+3. Place deployment guides in `/deployment`
+4. Move outdated docs to `/archive` (don't delete - keep for history)
+5. Update this README with links to new documents

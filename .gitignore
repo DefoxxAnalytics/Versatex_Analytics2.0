@@ -47,3 +47,7 @@ yarn-error.log*
 
 # OS
 Thumbs.db
+
+# Railway
+.railway/
+railway.json

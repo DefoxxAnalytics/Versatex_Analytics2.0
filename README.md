@@ -205,7 +205,37 @@ Note: Only users with `profile.role === 'admin'` can see and access the Django A
 
 ## 📦 Deployment
 
-### Docker Compose (Recommended)
+### Railway (Recommended for Production)
+
+Railway is the recommended platform for deploying this application to production.
+
+**Why Railway?**
+- Native support for Django + Celery + Redis + PostgreSQL
+- Cost-effective: $30-50/month for production
+- Zero-config networking between services
+- Built-in CI/CD from GitHub
+- No cold starts (24/7 availability)
+
+**Quick Deploy:**
+```bash
+# Install Railway CLI
+npm install -g @railway/cli
+
+# Login and initialize
+railway login
+railway init
+
+# Deploy
+railway up
+```
+
+**Complete Guide**: See [docs/deployment/RAILWAY.md](docs/deployment/RAILWAY.md) for detailed step-by-step instructions.
+
+**Cost Estimate**:
+- Development: ~$15-20/month
+- Production: ~$40-50/month (usage-based pricing)
+
+### Docker Compose (Local/Self-Hosted)
 
 ```bash
 # Production deployment
@@ -215,21 +245,11 @@ docker-compose --profile production up -d
 FRONTEND_PORT=8080 docker-compose up -d
 ```
 
-### Railway
+### Alternative Platforms
 
-```bash
-# Install Railway CLI
-npm install -g @railway/cli
-
-# Login and deploy
-railway login
-railway init
-railway up
-```
-
-### DigitalOcean
-
-See `docs/DEPLOYMENT-DIGITALOCEAN.md` for detailed instructions.
+- **Render**: Good free tier for testing ([Render Guide](https://render.com))
+- **DigitalOcean App Platform**: Best for enterprise scale (starts at $75/month)
+- **Self-Hosted**: DigitalOcean Droplet or AWS EC2 for maximum control ($6-12/month)
 
 ## 🧪 Testing
 
@@ -302,6 +322,9 @@ docker-compose up -d --build frontend
 - [Windows Setup](docs/setup/WINDOWS-SETUP.md) - Windows-specific instructions
 - [Docker Troubleshooting](docs/setup/DOCKER-TROUBLESHOOTING.md) - Common issues and solutions
 - [Development Guide](docs/development/CLAUDE.md) - AI assistant guidelines for this codebase
+
+### Deployment
+- [Railway Deployment Guide](docs/deployment/RAILWAY.md) - Complete Railway deployment guide (RECOMMENDED)
 
 ### Interactive Documentation
 - [API Documentation](http://localhost:8001/api/docs) - Interactive API docs
