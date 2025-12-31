@@ -214,9 +214,10 @@ class TestIsSameOrganization:
         """Test that user without profile doesn't have permission."""
         permission = IsSameOrganization()
         request = Mock()
-        request.user = Mock()
+        # Use spec to explicitly exclude 'profile' attribute
+        request.user = Mock(spec=['is_authenticated', 'is_superuser'])
         request.user.is_authenticated = True
-        del request.user.profile
+        request.user.is_superuser = False
 
         obj = Mock()
         obj.organization = Mock()

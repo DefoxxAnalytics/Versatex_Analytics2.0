@@ -42,7 +42,7 @@ export default defineConfig({
             '@radix-ui/react-switch',
           ],
           'vendor-router': ['wouter'],
-          'vendor-utils': ['axios', 'date-fns', 'clsx', 'class-variance-authority', 'tailwind-merge'],
+          'vendor-utils': ['axios', 'clsx', 'class-variance-authority', 'tailwind-merge'],
         },
       },
     },
