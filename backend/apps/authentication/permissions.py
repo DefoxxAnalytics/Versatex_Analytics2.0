@@ -56,23 +56,45 @@ class CanDeleteData(permissions.BasePermission):
         )
 
 
+class IsSuperAdmin(permissions.BasePermission):
+    """
+    Permission class for super admin (Django superuser) access.
+
+    Super admins have platform-level privileges that transcend organization
+    boundaries, such as uploading data for multiple organizations at once.
+    """
+    def has_permission(self, request, view):
+        return (
+            request.user and
+            request.user.is_authenticated and
+            request.user.is_superuser
+        )
+
+
 class IsSameOrganization(permissions.BasePermission):
     """
-    Permission class to ensure users can only access their organization's data
+    Permission class to ensure users can only access their organization's data.
+
+    Super admins (Django superusers) bypass this check and can access data
+    from any organization.
     """
     def has_object_permission(self, request, view, obj):
         if not request.user.is_authenticated:
             return False
-        
+
+        # Super admins can access any organization's data
+        if request.user.is_superuser:
+            return True
+
         if not hasattr(request.user, 'profile'):
             return False
-        
+
         # Check if object has organization field
         if hasattr(obj, 'organization'):
             return obj.organization == request.user.profile.organization
-        
+
         # Check if object has user field with profile
         if hasattr(obj, 'user') and hasattr(obj.user, 'profile'):
             return obj.user.profile.organization == request.user.profile.organization
-        
+
         return False

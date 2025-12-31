@@ -31,7 +31,22 @@
       "Bash(npm install)",
       "Bash(npm install:*)",
       "Bash(npx tsc:*)",
-      "Bash(docker builder prune:*)"
+      "Bash(docker builder prune:*)",
+      "Bash(gh run list:*)",
+      "Bash(gh run view:*)",
+      "Bash(timeout:*)",
+      "Bash(ping:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(pip install:*)",
+      "Bash(pnpm install:*)",
+      "Bash(set DEBUG=True)",
+      "Bash(set:*)",
+      "Bash(pnpm test:run:*)",
+      "Bash(pnpm add:*)",
+      "Bash(docker-compose build:*)",
+      "Skill(feature-dev:feature-dev)",
+      "Skill(feature-dev:feature-dev:*)"
     ],
     "deny": [],
     "ask": []

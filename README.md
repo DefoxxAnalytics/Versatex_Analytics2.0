@@ -1,7 +1,6 @@
-# Versatex Analytics
+# Versatex Analytics 2.0
 
-[![CI](https://github.com/DefoxxAnalytics/Versatex_Analytics/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/DefoxxAnalytics/Versatex_Analytics/actions/workflows/ci.yml)
-[![Deploy](https://github.com/DefoxxAnalytics/Versatex_Analytics/actions/workflows/deploy.yml/badge.svg)](https://github.com/DefoxxAnalytics/Versatex_Analytics/actions/workflows/deploy.yml)
+[![CI](https://github.com/DefoxxAnalytics/Versatex_Analytics2.0/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/DefoxxAnalytics/Versatex_Analytics2.0/actions/workflows/ci.yml)
 [![License: Proprietary](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
 [![Python 3.11](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org/downloads/release/python-311/)
 [![Django 5.0](https://img.shields.io/badge/Django-5.0-green.svg)](https://docs.djangoproject.com/en/5.0/)

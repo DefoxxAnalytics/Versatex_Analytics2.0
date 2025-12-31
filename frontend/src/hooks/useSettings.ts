@@ -1,4 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useRef } from 'react';
+import { authAPI, type UserPreferences } from '@/lib/api';
 
 /**
  * Color scheme type for brand theming
@@ -57,10 +59,10 @@ const SETTINGS_STORAGE_KEY = 'user-settings';
 /**
  * Load settings from localStorage
  * Returns default settings if none exist or if data is corrupted
- * 
+ *
  * @returns User settings object
  */
-function loadSettings(): UserSettings {
+function loadSettingsFromStorage(): UserSettings {
   try {
     const stored = localStorage.getItem(SETTINGS_STORAGE_KEY);
     if (!stored) {
@@ -68,7 +70,7 @@ function loadSettings(): UserSettings {
     }
 
     const parsed = JSON.parse(stored);
-    
+
     // Merge with defaults to ensure all fields exist
     return {
       ...DEFAULT_SETTINGS,
@@ -83,21 +85,14 @@ function loadSettings(): UserSettings {
 
 /**
  * Save settings to localStorage
- * Validates settings before saving
- * 
+ *
  * @param settings - Settings object to save
  */
-function saveSettings(settings: Partial<UserSettings>): UserSettings {
+function saveSettingsToStorage(settings: Partial<UserSettings>): UserSettings {
   try {
-    // Load current settings
-    const current = loadSettings();
-    
-    // Merge with new settings
-    const updated = {
-      ...current,
-      ...settings,
-    };
-    
+    const current = loadSettingsFromStorage();
+    const updated = { ...current, ...settings };
+
     // Validate theme
     if (settings.theme && !['light', 'dark'].includes(settings.theme)) {
       updated.theme = DEFAULT_SETTINGS.theme;
@@ -112,10 +107,8 @@ function saveSettings(settings: Partial<UserSettings>): UserSettings {
     if (settings.exportFormat && !['csv', 'xlsx', 'pdf'].includes(settings.exportFormat)) {
       updated.exportFormat = DEFAULT_SETTINGS.exportFormat;
     }
-    
-    // Save to localStorage
+
     localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(updated));
-    
     return updated;
   } catch (error) {
     console.error('Failed to save settings:', error);
@@ -124,62 +117,120 @@ function saveSettings(settings: Partial<UserSettings>): UserSettings {
 }
 
 /**
- * Hook to access user settings
- * 
+ * Convert UserSettings to UserPreferences (API format)
+ */
+function toApiFormat(settings: Partial<UserSettings>): Partial<UserPreferences> {
+  const prefs: Partial<UserPreferences> = {};
+
+  if (settings.theme !== undefined) prefs.theme = settings.theme;
+  if (settings.colorScheme !== undefined) prefs.colorScheme = settings.colorScheme;
+  if (settings.notifications !== undefined) prefs.notifications = settings.notifications;
+  if (settings.exportFormat !== undefined) prefs.exportFormat = settings.exportFormat;
+  if (settings.currency !== undefined) prefs.currency = settings.currency;
+  if (settings.dateFormat !== undefined) prefs.dateFormat = settings.dateFormat;
+
+  return prefs;
+}
+
+/**
+ * Convert UserPreferences (API format) to UserSettings
+ */
+function fromApiFormat(prefs: UserPreferences): Partial<UserSettings> {
+  const settings: Partial<UserSettings> = {};
+
+  if (prefs.theme !== undefined && prefs.theme !== 'system') {
+    settings.theme = prefs.theme as 'light' | 'dark';
+  }
+  if (prefs.colorScheme !== undefined) settings.colorScheme = prefs.colorScheme;
+  if (prefs.notifications !== undefined) settings.notifications = prefs.notifications;
+  if (prefs.exportFormat !== undefined) settings.exportFormat = prefs.exportFormat;
+  if (prefs.currency !== undefined) settings.currency = prefs.currency;
+  if (prefs.dateFormat !== undefined) settings.dateFormat = prefs.dateFormat;
+
+  return settings;
+}
+
+/**
+ * Check if user is authenticated
+ */
+function isAuthenticated(): boolean {
+  return localStorage.getItem('user') !== null;
+}
+
+/**
+ * Hook to access user settings with backend sync
+ *
  * Features:
- * - Loads settings from localStorage
- * - Returns default settings if none exist
- * - Handles corrupted data gracefully
+ * - Loads settings from localStorage first (fast)
+ * - Syncs with backend API when authenticated
+ * - Falls back to localStorage when offline/unauthenticated
  * - Caches settings for performance
- * 
+ *
  * @example
  * ```tsx
  * const { data: settings, isLoading } = useSettings();
- * 
+ *
  * if (isLoading) return <div>Loading...</div>;
- * 
+ *
  * return <div>Theme: {settings.theme}</div>;
  * ```
  */
 export function useSettings() {
-  return useQuery<UserSettings>({
+  const hasSyncedRef = useRef(false);
+  const queryClient = useQueryClient();
+
+  // Main query - loads from localStorage immediately
+  const query = useQuery<UserSettings, Error>({
     queryKey: ['settings'],
-    queryFn: loadSettings,
-    staleTime: Infinity, // Settings don't go stale
-    cacheTime: Infinity, // Keep in cache forever
+    queryFn: (): UserSettings => loadSettingsFromStorage(),
+    staleTime: Infinity,
+    cacheTime: Infinity,
     refetchOnMount: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
+
+  // Sync with backend on mount (only once per session)
+  useEffect(() => {
+    if (hasSyncedRef.current || !isAuthenticated()) return;
+    hasSyncedRef.current = true;
+
+    // Fetch preferences from backend and merge with local
+    authAPI.getPreferences()
+      .then((response) => {
+        const apiSettings = fromApiFormat(response.data);
+        const localSettings = loadSettingsFromStorage();
+
+        // Merge: API settings take precedence over local
+        const merged = { ...localSettings, ...apiSettings };
+
+        // Save to localStorage and update cache
+        saveSettingsToStorage(merged);
+        queryClient.setQueryData(['settings'], merged);
+      })
+      .catch((error) => {
+        // Silently fail - use local settings
+        console.debug('Could not sync settings from backend:', error);
+      });
+  }, [queryClient]);
+
+  return query;
 }
 
 /**
- * Hook to update user settings
- * 
+ * Hook to update user settings with backend sync
+ *
  * Features:
- * - Validates settings before saving
- * - Persists to localStorage
- * - Updates cache automatically
+ * - Updates localStorage immediately (optimistic)
+ * - Syncs to backend API when authenticated
  * - Supports partial updates
- * 
- * Security:
- * - Validates enum values (theme, exportFormat)
- * - Sanitizes input before storage
- * - Handles errors gracefully
- * 
+ *
  * @example
  * ```tsx
  * const updateSettings = useUpdateSettings();
- * 
+ *
  * // Update theme only
  * updateSettings.mutate({ theme: 'dark' });
- * 
- * // Update multiple settings
- * updateSettings.mutate({
- *   theme: 'dark',
- *   notifications: false,
- *   userName: 'John Doe'
- * });
  * ```
  */
 export function useUpdateSettings() {
@@ -187,10 +238,22 @@ export function useUpdateSettings() {
 
   return useMutation<UserSettings, Error, Partial<UserSettings>>({
     mutationFn: async (settings: Partial<UserSettings>) => {
-      return saveSettings(settings);
+      // Save to localStorage immediately
+      const updated = saveSettingsToStorage(settings);
+
+      // Sync to backend if authenticated
+      if (isAuthenticated()) {
+        try {
+          await authAPI.updatePreferences(toApiFormat(settings));
+        } catch (error) {
+          // Log but don't fail - localStorage is primary
+          console.debug('Could not sync settings to backend:', error);
+        }
+      }
+
+      return updated;
     },
     onSuccess: (data) => {
-      // Update the cache with new settings
       queryClient.setQueryData(['settings'], data);
     },
   });
@@ -198,11 +261,11 @@ export function useUpdateSettings() {
 
 /**
  * Hook to reset settings to defaults
- * 
+ *
  * @example
  * ```tsx
  * const resetSettings = useResetSettings();
- * 
+ *
  * resetSettings.mutate();
  * ```
  */
@@ -211,7 +274,18 @@ export function useResetSettings() {
 
   return useMutation<UserSettings, Error, void>({
     mutationFn: async () => {
+      // Clear localStorage
       localStorage.removeItem(SETTINGS_STORAGE_KEY);
+
+      // Sync to backend if authenticated
+      if (isAuthenticated()) {
+        try {
+          await authAPI.replacePreferences({});
+        } catch (error) {
+          console.debug('Could not reset settings on backend:', error);
+        }
+      }
+
       return DEFAULT_SETTINGS;
     },
     onSuccess: (data) => {

@@ -31,6 +31,7 @@ export interface UserProfile {
   department: string;
   is_active: boolean;
   created_at: string;
+  is_super_admin: boolean;
 }
 
 // User
@@ -70,6 +71,18 @@ export interface ChangePasswordRequest {
   old_password: string;
   new_password: string;
   new_password_confirm: string;
+}
+
+// User Preferences
+export interface UserPreferences {
+  theme?: 'light' | 'dark' | 'system';
+  colorScheme?: 'navy' | 'classic';
+  notifications?: boolean;
+  exportFormat?: 'csv' | 'xlsx' | 'pdf';
+  currency?: string;
+  dateFormat?: string;
+  dashboardLayout?: Record<string, unknown>;
+  sidebarCollapsed?: boolean;
 }
 
 // Supplier
@@ -404,6 +417,16 @@ export const authAPI = {
   // Refresh token endpoint - tokens in HTTP-only cookies
   refreshToken: (): Promise<AxiosResponse<{ message: string }>> =>
     api.post('/auth/token/refresh/'),
+
+  // User Preferences
+  getPreferences: (): Promise<AxiosResponse<UserPreferences>> =>
+    api.get('/auth/preferences/'),
+
+  updatePreferences: (data: Partial<UserPreferences>): Promise<AxiosResponse<UserPreferences>> =>
+    api.patch('/auth/preferences/', data),
+
+  replacePreferences: (data: UserPreferences): Promise<AxiosResponse<UserPreferences>> =>
+    api.put('/auth/preferences/', data),
 };
 
 // Procurement API

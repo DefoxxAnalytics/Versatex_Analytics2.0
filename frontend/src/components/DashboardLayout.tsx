@@ -2,14 +2,10 @@ import { useState, ReactNode } from 'react';
 import { Link, useLocation } from 'wouter';
 import {
   BarChart3,
-  Package,
-  Upload,
   FolderTree,
   Users,
   TrendingUp,
   Layers,
-  CalendarDays,
-  TrendingDown,
   Sparkles,
   LineChart,
   FileText,
@@ -23,11 +19,30 @@ import {
   Calendar,
   Target,
   Shield,
-  User as UserIcon,
+  RefreshCw,
+  Download,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
-import { useProcurementData } from '@/hooks/useProcurementData';
+import { usePermissions } from '@/contexts/PermissionContext';
+import { useProcurementData, useRefreshData } from '@/hooks/useProcurementData';
+import { procurementAPI } from '@/lib/api';
+import { toast } from 'sonner';
+import { CanExport } from './PermissionGate';
+import { Button } from '@/components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
+import { useIsMobile } from '@/hooks/useMobile';
+import { useDataPolling } from '@/hooks/useDataPolling';
 import type { ColorScheme } from '@/hooks/useSettings';
 import { cn } from '@/lib/utils';
 import { Breadcrumb } from './Breadcrumb';
@@ -78,21 +93,6 @@ const getSidebarStyles = (scheme: ColorScheme) => ({
   divider: scheme === 'navy' ? 'bg-white/20' : 'bg-gray-200',
   dividerText: scheme === 'navy' ? 'text-white/60' : 'text-gray-500',
 });
-
-/**
- * Check if the current user has admin role
- */
-function isAdmin(): boolean {
-  try {
-    const userStr = localStorage.getItem('user');
-    if (!userStr) return false;
-
-    const user = JSON.parse(userStr);
-    return user?.profile?.role === 'admin';
-  } catch {
-    return false;
-  }
-}
 
 /**
  * User information interface
@@ -169,16 +169,11 @@ interface NavItem {
 }
 
 /**
- * Complete navigation configuration for all 13 tabs
+ * Complete navigation configuration for all dashboard tabs
  * Organized logically by analysis type
+ * Note: Data upload is now handled via Django Admin Panel
  */
 const NAV_ITEMS: NavItem[] = [
-  {
-    path: '/upload',
-    label: 'Upload Data',
-    icon: Upload,
-    description: 'Upload procurement data files',
-  },
   {
     path: '/',
     label: 'Overview',
@@ -355,8 +350,74 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const [location] = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isFilterPaneOpen, setIsFilterPaneOpen] = useState(true);
+  const [isExporting, setIsExporting] = useState(false);
   const { data = [] } = useProcurementData();
+  const refreshData = useRefreshData();
   const { colorScheme } = useTheme();
+  const { hasPermission } = usePermissions();
+  const isMobile = useIsMobile();
+
+  // Enable polling for new data (60 second intervals)
+  useDataPolling({ enabled: data.length > 0 });
+
+  /**
+   * Handle data export to CSV
+   * Reads current filters from localStorage and exports filtered data
+   */
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      // Read filters from localStorage
+      const stored = localStorage.getItem('procurement_filters');
+      let params: { start_date?: string; end_date?: string } = {};
+
+      if (stored) {
+        const filters = JSON.parse(stored);
+        if (filters.dateRange?.start) {
+          params.start_date = filters.dateRange.start;
+        }
+        if (filters.dateRange?.end) {
+          params.end_date = filters.dateRange.end;
+        }
+      }
+
+      const response = await procurementAPI.exportCSV(params);
+
+      // Create download link
+      const url = window.URL.createObjectURL(response.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `procurement_export_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast.success('Export completed successfully');
+    } catch (error) {
+      console.error('Export failed:', error);
+      toast.error('Failed to export data');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  /**
+   * Handle data refresh
+   */
+  const handleRefresh = () => {
+    refreshData.mutate(undefined, {
+      onSuccess: () => {
+        toast.success('Data refreshed successfully');
+      },
+      onError: () => {
+        toast.error('Failed to refresh data');
+      },
+    });
+  };
+
+  // Check if user has admin panel access
+  const canAccessAdminPanel = hasPermission('admin_panel');
 
   // Get style configurations based on current color scheme
   const headerStyles = getHeaderStyles(colorScheme);
@@ -414,6 +475,54 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             {/* Logout button */}
             <LogoutButton colorScheme={colorScheme} />
 
+            {/* Refresh data button */}
+            {data.length > 0 && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleRefresh}
+                    disabled={refreshData.isLoading}
+                    className={cn("h-9 w-9", headerStyles.button)}
+                  >
+                    <RefreshCw className={cn(
+                      "h-5 w-5",
+                      refreshData.isLoading && "animate-spin"
+                    )} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Refresh data</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+
+            {/* Export button (managers and admins only) */}
+            {data.length > 0 && (
+              <CanExport>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleExport}
+                      disabled={isExporting}
+                      className={cn("h-9 w-9", headerStyles.button)}
+                    >
+                      <Download className={cn(
+                        "h-5 w-5",
+                        isExporting && "animate-pulse"
+                      )} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Export to CSV</p>
+                  </TooltipContent>
+                </Tooltip>
+              </CanExport>
+            )}
+
             {/* Filter pane toggle */}
             <button
               onClick={() => setIsFilterPaneOpen(!isFilterPaneOpen)}
@@ -468,8 +577,8 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
               const Icon = item.icon;
               const active = isActive(item.path);
 
-              // For Settings, render divider and Admin Panel link before it if user is admin
-              if (item.path === '/settings' && isAdmin()) {
+              // For Settings, render divider and Admin Panel link before it if user has admin access
+              if (item.path === '/settings' && canAccessAdminPanel) {
                 return (
                   <div key="admin-section">
                     {/* Divider with label */}
@@ -523,7 +632,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
               }
 
               // For Settings (non-admin), render divider before it
-              if (item.path === '/settings' && !isAdmin()) {
+              if (item.path === '/settings' && !canAccessAdminPanel) {
                 return (
                   <div key="settings-section">
                     {/* Divider with label */}
@@ -585,18 +694,27 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         <main className="flex-1 p-6 lg:p-8">
           {/* Breadcrumb Navigation */}
           <Breadcrumb />
-          {/* Show upload prompt if no data */}
+          {/* Show data prompt if no data */}
           {data.length === 0 && location !== '/' && (
-            <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-              <p className="text-sm text-yellow-800">
-                <strong>No data uploaded yet.</strong> Please{' '}
-                <Link 
-                  href="/"
-                  className="underline font-medium hover:text-yellow-900"
-                >
-                  upload your procurement data
-                </Link>{' '}
-                to view analytics.
+            <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-sm text-blue-800">
+                <strong>No data available yet.</strong>{' '}
+                {canAccessAdminPanel ? (
+                  <>
+                    Please upload procurement data via the{' '}
+                    <a
+                      href={`${window.location.protocol}//${window.location.hostname}:8001/admin/procurement/dataupload/upload-csv/`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline font-medium hover:text-blue-900"
+                    >
+                      Admin Panel
+                    </a>{' '}
+                    to view analytics.
+                  </>
+                ) : (
+                  'Contact an administrator to upload procurement data.'
+                )}
               </p>
             </div>
           )}
@@ -611,8 +729,8 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
               )}
             </div>
 
-            {/* Filter Pane */}
-            {isFilterPaneOpen && data.length > 0 && (
+            {/* Filter Pane - Desktop */}
+            {isFilterPaneOpen && data.length > 0 && !isMobile && (
               <aside className="w-80 flex-shrink-0 hidden lg:block">
                 <FilterPane />
               </aside>
@@ -620,6 +738,18 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           </div>
         </main>
       </div>
+
+      {/* Filter Pane - Mobile Bottom Sheet */}
+      {isMobile && data.length > 0 && (
+        <Sheet open={isFilterPaneOpen} onOpenChange={setIsFilterPaneOpen}>
+          <SheetContent side="bottom" className="h-[80vh] overflow-y-auto">
+            <SheetHeader className="pb-4">
+              <SheetTitle>Filters</SheetTitle>
+            </SheetHeader>
+            <FilterPane />
+          </SheetContent>
+        </Sheet>
+      )}
 
       {/* Mobile menu overlay */}
       {isMobileMenuOpen && (

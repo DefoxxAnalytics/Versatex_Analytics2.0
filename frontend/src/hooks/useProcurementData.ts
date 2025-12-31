@@ -1,95 +1,137 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
-import type { ProcurementRecord } from '@/lib/csvParser';
 import { applyFilters } from '@/lib/analytics';
 import type { Filters } from './useFilters';
-import { saveProcurementData, loadProcurementData, clearProcurementData } from '@/lib/storage';
-
-const QUERY_KEY = ['procurementData'];
+import { procurementAPI, type Transaction } from '@/lib/api';
 
 /**
- * Hook to access procurement data from global state
+ * ProcurementRecord interface for frontend analytics
+ * Data is now fetched from the backend API (no more IndexedDB)
+ */
+export interface ProcurementRecord {
+  supplier: string;
+  category: string;
+  subcategory: string;
+  amount: number;
+  date: string;
+  location: string;
+  year?: number;
+  spendBand?: string;
+}
+
+const QUERY_KEY = ['procurementData'] as const;
+
+/**
+ * Transform backend Transaction to frontend ProcurementRecord
+ */
+function transformTransaction(tx: Transaction): ProcurementRecord {
+  // Extract year from date
+  const dateObj = new Date(tx.date);
+  const year = !isNaN(dateObj.getTime()) ? dateObj.getFullYear() : undefined;
+
+  return {
+    supplier: tx.supplier_name,
+    category: tx.category_name,
+    subcategory: tx.subcategory || 'Unspecified',
+    amount: parseFloat(tx.amount),
+    date: tx.date,
+    location: tx.location || 'Unknown',
+    year,
+    spendBand: tx.spend_band || undefined,
+  };
+}
+
+/**
+ * Hook to access procurement data from the backend API
  * Returns RAW UNFILTERED data - use this for:
  * - Populating filter options (categories, suppliers, locations, years)
- * - Upload page statistics
+ * - Dashboard statistics
  * - Any component that needs to see all data
- * 
+ *
  * For filtered data, use useFilteredProcurementData() instead.
+ *
+ * NOTE: Data is now fetched from PostgreSQL via Django API.
+ * Upload data via Django Admin Panel at /admin/procurement/dataupload/upload-csv/
  */
 export function useProcurementData() {
-  return useQuery<ProcurementRecord[]>({
+  return useQuery<ProcurementRecord[], Error>({
     queryKey: QUERY_KEY,
-    queryFn: async () => {
+    queryFn: async (): Promise<ProcurementRecord[]> => {
       try {
-        return await loadProcurementData();
+        // Fetch all transactions from the backend API
+        // Use a large page_size to get all data (pagination handled by backend)
+        const response = await procurementAPI.getTransactions({ page_size: 10000 });
+        const transactions = response.data.results;
+
+        // Transform backend format to frontend format
+        return transactions.map(transformTransaction);
       } catch (error) {
-        console.error('Failed to load data from IndexedDB:', error);
+        console.error('Failed to load data from API:', error);
         return [];
       }
     },
-    staleTime: Infinity, // Data never becomes stale
-    cacheTime: Infinity, // Data never gets garbage collected
-    refetchOnMount: false,
+    staleTime: 5 * 60 * 1000, // Data becomes stale after 5 minutes
+    cacheTime: 30 * 60 * 1000, // Keep in cache for 30 minutes
+    refetchOnMount: true,
     refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
+    refetchOnReconnect: true,
   });
 }
 
 /**
  * Hook to access FILTERED procurement data
  * Automatically applies active filters from the filter pane
- * 
+ *
  * Uses TanStack Query for efficient caching - filtered data is computed once
  * and shared across all components. Cache is invalidated when filters or
  * raw data change.
- * 
+ *
  * Use this hook in analysis pages that should respect filter selections:
  * - Overview page
  * - Categories page
  * - Suppliers page
  * - Pareto Analysis page
  * - etc.
- * 
+ *
  * Do NOT use this in:
  * - FilterPane (needs raw data to show all options)
- * - Upload page (needs raw data count)
- * 
+ *
  * @returns Filtered procurement records based on active filters
  */
 export function useFilteredProcurementData() {
   const queryClient = useQueryClient();
-  const { data: rawData = [], isLoading: rawLoading, isError: rawError } = useProcurementData();
-  
+  const { data: rawData = [] as ProcurementRecord[], isLoading: rawLoading, isError: rawError } = useProcurementData();
+
   // Set up event listener to invalidate query when filters change
   useEffect(() => {
     const handleFilterUpdate = () => {
       // Invalidate the filtered data query to trigger re-computation
       queryClient.invalidateQueries(['filteredProcurementData']);
     };
-    
+
     window.addEventListener('filtersUpdated', handleFilterUpdate);
-    
+
     return () => {
       window.removeEventListener('filtersUpdated', handleFilterUpdate);
     };
   }, [queryClient]);
-  
+
   // Use TanStack Query to cache filtered data
-  const { data: filteredData = [], isLoading: filterLoading, isError: filterError } = useQuery({
+  const { data: filteredData = [] as ProcurementRecord[], isLoading: filterLoading, isError: filterError } = useQuery<ProcurementRecord[], Error>({
     queryKey: ['filteredProcurementData', rawData.length],
-    queryFn: () => {
+    queryFn: (): ProcurementRecord[] => {
       // Read filters from localStorage
       try {
         const stored = localStorage.getItem('procurement_filters');
         if (!stored || !rawData || rawData.length === 0) {
-          return rawData;
+          return rawData as ProcurementRecord[];
         }
-        
+
         const filters = JSON.parse(stored) as Filters;
-        return applyFilters(rawData, filters);
+        return applyFilters(rawData as ProcurementRecord[], filters);
       } catch (error) {
         console.error('Failed to apply filters:', error);
-        return rawData;
+        return rawData as ProcurementRecord[];
       }
     },
     staleTime: Infinity, // Data only becomes stale when explicitly invalidated
@@ -98,52 +140,24 @@ export function useFilteredProcurementData() {
   });
 
   return {
-    data: filteredData,
+    data: filteredData as ProcurementRecord[],
     isLoading: rawLoading || filterLoading,
     isError: rawError || filterError,
   };
 }
 
 /**
- * Hook to upload new procurement data
- * Replaces existing data and persists to localStorage
+ * Hook to refresh procurement data from the API
+ * Call this after data changes (e.g., after admin uploads new data)
  */
-export function useUploadData() {
-  const queryClient = useQueryClient();
-
-  return useMutation<ProcurementRecord[], Error, ProcurementRecord[]>({
-    mutationFn: async (data: ProcurementRecord[]) => {
-      if (!data || !Array.isArray(data)) {
-        throw new Error('Invalid data format');
-      }
-
-      // Persist to IndexedDB (supports large datasets)
-      await saveProcurementData(data);
-      return data;
-    },
-    onSuccess: (data) => {
-      // Update the query cache
-      queryClient.setQueryData(QUERY_KEY, data);
-      // Invalidate all queries to force re-fetch
-      queryClient.invalidateQueries(QUERY_KEY);
-      queryClient.invalidateQueries(['filteredProcurementData']);
-    },
-  });
-}
-
-/**
- * Hook to clear all procurement data
- */
-export function useClearData() {
+export function useRefreshData() {
   const queryClient = useQueryClient();
 
   return useMutation<void, Error, void>({
     mutationFn: async () => {
-      await clearProcurementData();
-    },
-    onSuccess: () => {
-      // Clear the query cache
-      queryClient.setQueryData(QUERY_KEY, []);
+      // Just invalidate the query - TanStack Query will refetch
+      await queryClient.invalidateQueries(QUERY_KEY);
+      await queryClient.invalidateQueries(['filteredProcurementData']);
     },
   });
 }
@@ -152,12 +166,13 @@ export function useClearData() {
  * Hook to get summary statistics from procurement data
  */
 export function useProcurementStats() {
-  const { data = [] } = useProcurementData();
+  const { data = [] as ProcurementRecord[] } = useProcurementData();
+  const records = data as ProcurementRecord[];
 
-  const totalSpend = data.reduce((sum, record) => sum + record.amount, 0);
-  const uniqueSuppliers = new Set(data.map(r => r.supplier)).size;
-  const uniqueCategories = new Set(data.map(r => r.category)).size;
-  const recordCount = data.length;
+  const totalSpend = records.reduce((sum: number, record: ProcurementRecord) => sum + record.amount, 0);
+  const uniqueSuppliers = new Set(records.map((r: ProcurementRecord) => r.supplier)).size;
+  const uniqueCategories = new Set(records.map((r: ProcurementRecord) => r.category)).size;
+  const recordCount = records.length;
 
   return {
     totalSpend,
@@ -166,3 +181,6 @@ export function useProcurementStats() {
     recordCount,
   };
 }
+
+// Re-export ProcurementRecord type for backwards compatibility
+export type { ProcurementRecord as ProcurementRecordType };

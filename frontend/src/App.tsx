@@ -8,11 +8,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { DashboardLayout } from "./components/DashboardLayout";
 import { lazy, Suspense } from "react";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { PermissionProvider } from "./contexts/PermissionContext";
 import { Redirect } from "wouter";
 
 // Lazy load pages for code splitting and performance
 const Login = lazy(() => import("./pages/Login"));
-const Home = lazy(() => import("./pages/Home"));
 const Overview = lazy(() => import("./pages/Overview"));
 const CategoriesPage = lazy(() => import("./pages/Categories"));
 const SuppliersPage = lazy(() => import("./pages/Suppliers"));
@@ -83,17 +83,6 @@ function Router() {
         <DashboardLayout>
           <Suspense fallback={<PageLoader />}>
             <Overview />
-          </Suspense>
-        </DashboardLayout>
-        </ProtectedRoute>
-      </Route>
-
-      {/* Upload route - data upload (protected) */}
-      <Route path="/upload">
-        <ProtectedRoute>
-        <DashboardLayout>
-          <Suspense fallback={<PageLoader />}>
-            <Home />
           </Suspense>
         </DashboardLayout>
         </ProtectedRoute>
@@ -237,10 +226,12 @@ function App() {
       <QueryClientProvider client={queryClient}>
         <ThemeProvider defaultTheme="light" switchable>
           <AuthProvider>
-            <TooltipProvider>
-              <Toaster />
-              <Router />
-            </TooltipProvider>
+            <PermissionProvider>
+              <TooltipProvider>
+                <Toaster />
+                <Router />
+              </TooltipProvider>
+            </PermissionProvider>
           </AuthProvider>
         </ThemeProvider>
       </QueryClientProvider>

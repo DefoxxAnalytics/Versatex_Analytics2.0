@@ -20,12 +20,16 @@
  * - Lazy-loaded ECharts
  */
 
-import { DollarSign, Users, Package, TrendingUp, Filter } from 'lucide-react';
-import { Link } from 'wouter';
-import { useFilteredProcurementData } from '@/hooks/useProcurementData';
+import { useState, useMemo } from 'react';
+import { DollarSign, Users, Package, TrendingUp, Filter, ExternalLink } from 'lucide-react';
+import { useFilteredProcurementData, type ProcurementRecord } from '@/hooks/useProcurementData';
+import { usePermissions } from '@/contexts/PermissionContext';
 import { useFilters } from '@/hooks/useFilters';
 import { StatCard } from '@/components/StatCard';
 import { Chart } from '@/components/Chart';
+import { SkeletonCard } from '@/components/SkeletonCard';
+import { SkeletonChart } from '@/components/SkeletonChart';
+import { DrillDownModal } from '@/components/DrillDownModal';
 import {
   calculateTotalSpend,
   calculateSupplierCount,
@@ -40,15 +44,73 @@ import {
   getSpendDistributionConfig,
 } from '@/lib/chartConfigs';
 
+// Drill-down state type
+interface DrillDownState {
+  open: boolean;
+  entityType: 'category' | 'supplier' | 'location' | 'year';
+  entityName: string;
+}
+
 export default function Overview() {
   const { data: filteredData = [], isLoading } = useFilteredProcurementData();
   const { data: filters, isLoading: filtersLoading } = useFilters();
+  const { hasPermission } = usePermissions();
+  const canAccessAdmin = hasPermission('admin_panel');
+
+  // Drill-down modal state
+  const [drillDown, setDrillDown] = useState<DrillDownState>({
+    open: false,
+    entityType: 'category',
+    entityName: '',
+  });
+
+  // Admin panel URL for data upload
+  const adminUploadUrl = `${window.location.protocol}//${window.location.hostname}:8001/admin/procurement/dataupload/upload-csv/`;
 
   // Calculate statistics from filtered data
   const totalSpend = calculateTotalSpend(filteredData);
   const supplierCount = calculateSupplierCount(filteredData);
   const categoryCount = calculateCategoryCount(filteredData);
   const avgTransaction = calculateAverageTransaction(filteredData);
+
+  // Filter data for drill-down modal
+  const drillDownData = useMemo(() => {
+    if (!drillDown.entityName || !filteredData.length) return [];
+
+    return filteredData.filter((record) => {
+      switch (drillDown.entityType) {
+        case 'category':
+          return record.category === drillDown.entityName;
+        case 'supplier':
+          return record.supplier === drillDown.entityName;
+        case 'location':
+          return record.location === drillDown.entityName;
+        default:
+          return false;
+      }
+    });
+  }, [drillDown.entityType, drillDown.entityName, filteredData]);
+
+  // Handle chart click for drill-down
+  const handleCategoryClick = (params: { name: string; value: number }) => {
+    setDrillDown({
+      open: true,
+      entityType: 'category',
+      entityName: params.name,
+    });
+  };
+
+  const handleSupplierClick = (params: { name: string; value: number }) => {
+    setDrillDown({
+      open: true,
+      entityType: 'supplier',
+      entityName: params.name,
+    });
+  };
+
+  const closeDrillDown = () => {
+    setDrillDown((prev) => ({ ...prev, open: false }));
+  };
 
   // Format currency
   const formatCurrency = (amount: number): string => {
@@ -60,19 +122,38 @@ export default function Overview() {
     }).format(amount);
   };
 
-  // Loading state
+  // Loading state with skeleton loaders
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading analytics...</p>
+      <div className="space-y-8">
+        {/* Page Header */}
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Overview</h1>
+          <p className="text-gray-600 mt-2">
+            Key metrics and insights from your procurement data
+          </p>
+        </div>
+
+        {/* Skeleton Statistics Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
+        </div>
+
+        {/* Skeleton Charts Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <SkeletonChart height={350} type="bar" />
+          <SkeletonChart height={350} type="line" />
+          <SkeletonChart height={350} type="bar" />
+          <SkeletonChart height={350} type="pie" />
         </div>
       </div>
     );
   }
 
-  // Empty state - no data uploaded
+  // Empty state - no data available
   if (filteredData.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -82,13 +163,21 @@ export default function Overview() {
             No Data Available
           </h2>
           <p className="text-gray-600 mb-6">
-            Upload your procurement data to see analytics and insights.
+            {canAccessAdmin
+              ? 'Upload your procurement data via the Admin Panel to see analytics and insights.'
+              : 'Contact an administrator to upload procurement data to see analytics and insights.'}
           </p>
-          <Link href="/upload">
-            <span className="inline-block px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors cursor-pointer">
-              Upload Data
-            </span>
-          </Link>
+          {canAccessAdmin && (
+            <a
+              href={adminUploadUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <ExternalLink className="h-4 w-4" />
+              Go to Admin Panel
+            </a>
+          )}
         </div>
       </div>
     );
@@ -176,10 +265,11 @@ export default function Overview() {
         {/* Spend by Category */}
         <Chart
           title="Spend by Category"
-          description="Shows how your procurement budget is distributed across different categories. Identify which areas consume the most resources."
+          description="Shows how your procurement budget is distributed across different categories. Click a category to see details."
           option={spendByCategoryConfig}
           height={350}
           loading={isLoading}
+          onChartClick={handleCategoryClick}
         />
 
         {/* Spend Trend Over Time */}
@@ -194,10 +284,11 @@ export default function Overview() {
         {/* Top 10 Suppliers */}
         <Chart
           title="Top 10 Suppliers"
-          description="Your largest vendors by total spend. Focus on these key relationships for negotiation opportunities and risk management."
+          description="Your largest vendors by total spend. Click a supplier to see details."
           option={topSuppliersConfig}
           height={350}
           loading={isLoading}
+          onChartClick={handleSupplierClick}
         />
 
         {/* Spend Distribution */}
@@ -209,6 +300,17 @@ export default function Overview() {
           loading={isLoading}
         />
       </div>
+
+      {/* Drill-Down Modal */}
+      <DrillDownModal
+        open={drillDown.open}
+        onClose={closeDrillDown}
+        title={drillDown.entityType === 'category' ? 'Category' : 'Supplier'}
+        entityType={drillDown.entityType}
+        entityName={drillDown.entityName}
+        data={drillDownData}
+        totalSpend={totalSpend}
+      />
     </div>
   );
 }

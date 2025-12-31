@@ -47,8 +47,13 @@ class ReadAPIThrottle(ScopedRateThrottle):
 def check_object_organization(obj, user):
     """
     Verify that an object belongs to the user's organization.
+    Super admins (Django superusers) can access any organization's data.
     Raises PermissionDenied if organization mismatch.
     """
+    # Super admins can access any organization's data
+    if user.is_superuser:
+        return
+
     if not hasattr(user, 'profile'):
         raise PermissionDenied("User profile not found")
     if obj.organization != user.profile.organization:
@@ -246,38 +251,53 @@ class TransactionViewSet(viewsets.ModelViewSet):
         """
         Upload CSV file with procurement data.
         Rate limited to 10 uploads per hour per user.
+
+        Super admins (Django superusers) can upload data for multiple organizations
+        by including an 'organization' column in the CSV. Regular users' uploads
+        will have any 'organization' column ignored.
         """
         serializer = CSVUploadSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        
+
+        # Check if user is a super admin (can upload for multiple orgs)
+        is_super_admin = request.user.is_superuser
+
         try:
             processor = CSVProcessor(
                 organization=request.user.profile.organization,
                 user=request.user,
                 file=serializer.validated_data['file'],
-                skip_duplicates=serializer.validated_data['skip_duplicates']
+                skip_duplicates=serializer.validated_data['skip_duplicates'],
+                allow_multi_org=is_super_admin
             )
-            
+
             upload = processor.process()
-            
+
+            # Build audit details
+            audit_details = {
+                'file_name': upload.file_name,
+                'successful': upload.successful_rows,
+                'failed': upload.failed_rows
+            }
+
+            # Include affected organizations for super admin multi-org uploads
+            if is_super_admin and len(processor.orgs_affected) > 0:
+                audit_details['organizations_affected'] = list(processor.orgs_affected)
+
             log_action(
                 user=request.user,
                 action='upload',
                 resource='transactions',
                 resource_id=upload.batch_id,
-                details={
-                    'file_name': upload.file_name,
-                    'successful': upload.successful_rows,
-                    'failed': upload.failed_rows
-                },
+                details=audit_details,
                 request=request
             )
-            
+
             return Response(
                 DataUploadSerializer(upload).data,
                 status=status.HTTP_201_CREATED
             )
-        
+
         except Exception as e:
             return Response(
                 {'error': str(e)},

@@ -1,23 +1,52 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { isAuthenticated, clearSession, updateActivity, getRemainingSessionTime } from '@/lib/auth';
-import { authAPI } from '@/lib/api';
+import { isAuthenticated, clearSession, updateActivity, getRemainingSessionTime, getUserData } from '@/lib/auth';
+import { authAPI, type User, type UserRole } from '@/lib/api';
 import { toast } from 'sonner';
 
 interface AuthContextType {
   isAuth: boolean;
+  user: User | null;
+  role: UserRole | null;
+  isSuperAdmin: boolean;
   logout: () => void;
   checkAuth: () => void;
+  refreshUser: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuth, setIsAuth] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
   const [isChecking, setIsChecking] = useState(true);
+
+  /**
+   * Load user data from localStorage
+   */
+  const refreshUser = () => {
+    const userData = getUserData<User>();
+    setUser(userData);
+  };
+
+  /**
+   * Derived role from user profile
+   */
+  const role: UserRole | null = user?.profile?.role ?? null;
+
+  /**
+   * Derived super admin status from user profile
+   * Super admins have platform-level privileges (e.g., multi-org uploads)
+   */
+  const isSuperAdmin: boolean = user?.profile?.is_super_admin ?? false;
 
   const checkAuth = () => {
     const authenticated = isAuthenticated();
     setIsAuth(authenticated);
+    if (authenticated) {
+      refreshUser();
+    } else {
+      setUser(null);
+    }
     return authenticated;
   };
 
@@ -31,6 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Always clear local session data
     clearSession();
     setIsAuth(false);
+    setUser(null);
     toast.info('Logged out successfully');
   };
 
@@ -103,7 +133,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ isAuth, logout, checkAuth }}>
+    <AuthContext.Provider value={{ isAuth, user, role, isSuperAdmin, logout, checkAuth, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

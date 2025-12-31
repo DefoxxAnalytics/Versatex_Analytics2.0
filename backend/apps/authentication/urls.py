@@ -5,7 +5,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     RegisterView, LoginView, LogoutView, CookieTokenRefreshView,
-    CurrentUserView, ChangePasswordView,
+    CurrentUserView, ChangePasswordView, UserPreferencesView,
     OrganizationViewSet, UserProfileViewSet, AuditLogViewSet
 )
 
@@ -24,6 +24,7 @@ urlpatterns = [
     # User management
     path('user/', CurrentUserView.as_view(), name='current-user'),
     path('change-password/', ChangePasswordView.as_view(), name='change-password'),
+    path('preferences/', UserPreferencesView.as_view(), name='user-preferences'),
 
     # Router URLs
     path('', include(router.urls)),

@@ -38,7 +38,13 @@ class UserProfile(models.Model):
         ('manager', 'Manager'),
         ('viewer', 'Viewer'),
     ]
-    
+
+    # Allowed keys for the preferences JSONField
+    ALLOWED_PREFERENCE_KEYS = {
+        'theme', 'colorScheme', 'notifications', 'exportFormat',
+        'currency', 'dateFormat', 'dashboardLayout', 'sidebarCollapsed'
+    }
+
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     organization = models.ForeignKey(
         Organization,
@@ -48,6 +54,7 @@ class UserProfile(models.Model):
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='viewer')
     phone = models.CharField(max_length=20, blank=True)
     department = models.CharField(max_length=100, blank=True)
+    preferences = models.JSONField(default=dict, blank=True, help_text='User preferences (theme, notifications, etc.)')
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -72,6 +79,14 @@ class UserProfile(models.Model):
     def can_delete_data(self):
         return self.role == 'admin'
 
+    def is_super_admin(self):
+        """Check if user is a super admin (Django superuser).
+
+        Super admins have platform-level privileges that transcend organization
+        boundaries, such as uploading data for multiple organizations at once.
+        """
+        return self.user.is_superuser
+
 
 class AuditLog(models.Model):
     """
@@ -95,7 +110,7 @@ class AuditLog(models.Model):
     ALLOWED_DETAIL_KEYS = {
         'file_name', 'successful', 'failed', 'duplicate', 'batch_id', 'record_id',
         'changes', 'count', 'username', 'error', 'old_value', 'new_value',
-        'reason', 'target_id', 'target_type'
+        'reason', 'target_id', 'target_type', 'organizations_affected'
     }
 
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='audit_logs')

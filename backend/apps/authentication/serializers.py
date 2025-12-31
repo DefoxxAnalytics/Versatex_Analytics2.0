@@ -19,14 +19,39 @@ class OrganizationSerializer(serializers.ModelSerializer):
 class UserProfileSerializer(serializers.ModelSerializer):
     """Serializer for UserProfile model"""
     organization_name = serializers.CharField(source='organization.name', read_only=True)
-    
+    is_super_admin = serializers.SerializerMethodField()
+
     class Meta:
         model = UserProfile
         fields = [
             'id', 'organization', 'organization_name', 'role',
-            'phone', 'department', 'is_active', 'created_at'
+            'phone', 'department', 'preferences', 'is_active', 'created_at', 'is_super_admin'
         ]
-        read_only_fields = ['id', 'created_at']
+        read_only_fields = ['id', 'created_at', 'is_super_admin']
+
+    def get_is_super_admin(self, obj):
+        """Return whether the user is a super admin (Django superuser)."""
+        return obj.is_super_admin()
+
+
+class UserPreferencesSerializer(serializers.Serializer):
+    """Serializer for user preferences update"""
+    theme = serializers.ChoiceField(choices=['light', 'dark', 'system'], required=False)
+    colorScheme = serializers.ChoiceField(choices=['navy', 'classic'], required=False)
+    notifications = serializers.BooleanField(required=False)
+    exportFormat = serializers.ChoiceField(choices=['csv', 'xlsx', 'json'], required=False)
+    currency = serializers.CharField(max_length=10, required=False)
+    dateFormat = serializers.ChoiceField(
+        choices=['MM/DD/YYYY', 'DD/MM/YYYY', 'YYYY-MM-DD'],
+        required=False
+    )
+    dashboardLayout = serializers.CharField(max_length=50, required=False)
+    sidebarCollapsed = serializers.BooleanField(required=False)
+
+    def validate(self, attrs):
+        """Filter out keys not in ALLOWED_PREFERENCE_KEYS."""
+        allowed_keys = UserProfile.ALLOWED_PREFERENCE_KEYS
+        return {k: v for k, v in attrs.items() if k in allowed_keys}
 
 
 class UserSerializer(serializers.ModelSerializer):

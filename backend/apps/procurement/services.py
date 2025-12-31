@@ -4,15 +4,18 @@ Business logic for procurement data processing with security enhancements:
 - File type validation
 - Sanitized error messages
 - Cryptographically secure batch IDs
+- Multi-organization support for super admins
 """
 import pandas as pd
 import secrets
 import logging
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
-from django.db import transaction, IntegrityError
+from django.db import models, transaction, IntegrityError
+from django.db.models import Q
 from django.utils import timezone
 from .models import Supplier, Category, Transaction, DataUpload
+from apps.authentication.models import Organization
 
 logger = logging.getLogger(__name__)
 
@@ -90,14 +93,26 @@ class CSVProcessor:
     REQUIRED_COLUMNS = ['supplier', 'category', 'amount', 'date']
     OPTIONAL_COLUMNS = [
         'description', 'subcategory', 'location', 'fiscal_year',
-        'spend_band', 'payment_method', 'invoice_number'
+        'spend_band', 'payment_method', 'invoice_number', 'organization'
     ]
 
-    def __init__(self, organization, user, file, skip_duplicates=True):
-        self.organization = organization
+    def __init__(self, organization, user, file, skip_duplicates=True, allow_multi_org=False):
+        """
+        Initialize CSV processor.
+
+        Args:
+            organization: Default organization to use for records without organization column
+            user: User performing the upload
+            file: CSV file object
+            skip_duplicates: Whether to skip duplicate records
+            allow_multi_org: If True, allows organization column to specify different orgs
+                             (only for super admins)
+        """
+        self.default_organization = organization
         self.user = user
         self.file = file
         self.skip_duplicates = skip_duplicates
+        self.allow_multi_org = allow_multi_org
         # Use cryptographically secure token instead of UUID
         # This prevents batch ID guessing/enumeration attacks
         self.batch_id = secrets.token_urlsafe(32)
@@ -108,6 +123,10 @@ class CSVProcessor:
             'failed': 0,
             'duplicates': 0
         }
+        # Track which organizations were affected (for audit logging)
+        self.orgs_affected = set()
+        # Cache for organization lookups (name/slug -> Organization)
+        self._org_cache = {}
 
     def process(self):
         """
@@ -119,9 +138,9 @@ class CSVProcessor:
         if not is_valid:
             raise ValueError(f"Invalid file: {error_msg}")
 
-        # Create upload record
+        # Create upload record (uses default org for the record itself)
         upload = DataUpload.objects.create(
-            organization=self.organization,
+            organization=self.default_organization,
             uploaded_by=self.user,
             file_name=self.file.name,
             file_size=self.file.size,
@@ -208,6 +227,54 @@ class CSVProcessor:
         if missing:
             raise ValueError(f"Missing required columns: {', '.join(missing)}")
 
+    def _resolve_organization(self, org_identifier: str, row_index: int) -> Organization:
+        """
+        Resolve organization by name or slug.
+
+        Args:
+            org_identifier: Organization name or slug from CSV
+            row_index: Current row index (for error messages)
+
+        Returns:
+            Organization instance
+
+        Raises:
+            ValueError: If organization not found (fail fast)
+        """
+        if not org_identifier:
+            return self.default_organization
+
+        org_identifier = org_identifier.strip()
+
+        # Check cache first
+        if org_identifier in self._org_cache:
+            return self._org_cache[org_identifier]
+
+        # Try to find by name (case-insensitive) or slug
+        org = Organization.objects.filter(
+            is_active=True
+        ).filter(
+            Q(name__iexact=org_identifier) | Q(slug__iexact=org_identifier)
+        ).first()
+
+        if not org:
+            # Get list of valid organizations for helpful error message
+            valid_orgs = list(Organization.objects.filter(
+                is_active=True
+            ).values_list('name', flat=True)[:10])
+            valid_list = ', '.join(valid_orgs)
+            if len(valid_orgs) == 10:
+                valid_list += ', ...'
+
+            raise ValueError(
+                f"Row {row_index + 2}: Organization '{org_identifier}' not found. "
+                f"Valid organizations: {valid_list}"
+            )
+
+        # Cache the result
+        self._org_cache[org_identifier] = org
+        return org
+
     def _process_rows(self, df):
         """Process each row in the dataframe"""
         for index, row in df.iterrows():
@@ -225,13 +292,22 @@ class CSVProcessor:
     @transaction.atomic
     def _process_row(self, row, index):
         """Process a single row with formula injection prevention"""
+        # Resolve organization for this row
+        if self.allow_multi_org and 'organization' in row and pd.notna(row['organization']):
+            organization = self._resolve_organization(str(row['organization']), index)
+        else:
+            organization = self.default_organization
+
+        # Track affected organizations for audit logging
+        self.orgs_affected.add(organization.name)
+
         # Get or create supplier (sanitize name)
         supplier_name = sanitize_csv_value(str(row['supplier']).strip())
         if not supplier_name or supplier_name == "'":
             raise ValueError("Supplier name is required")
 
         supplier, _ = Supplier.objects.get_or_create(
-            organization=self.organization,
+            organization=organization,
             name=supplier_name,
             defaults={'is_active': True}
         )
@@ -242,7 +318,7 @@ class CSVProcessor:
             raise ValueError("Category name is required")
 
         category, _ = Category.objects.get_or_create(
-            organization=self.organization,
+            organization=organization,
             name=category_name,
             defaults={'is_active': True}
         )
@@ -264,21 +340,26 @@ class CSVProcessor:
         except (InvalidOperation, ValueError) as e:
             raise ValueError(f"Invalid amount value: {row['amount']}")
 
-        # Build optional fields with sanitization
+        # Build optional fields with sanitization (exclude 'organization' - handled separately)
         optional_data = {}
+        excluded_optional = {'invoice_number', 'organization'}
         for col in self.OPTIONAL_COLUMNS:
+            if col in excluded_optional:
+                continue
             if col in row and pd.notna(row[col]):
                 # Sanitize all string values to prevent formula injection
                 value = str(row[col]).strip()
                 optional_data[col] = sanitize_csv_value(value)
 
         # Get invoice number for uniqueness check
-        invoice_number = optional_data.get('invoice_number', '')
+        invoice_number = ''
+        if 'invoice_number' in row and pd.notna(row['invoice_number']):
+            invoice_number = sanitize_csv_value(str(row['invoice_number']).strip())
 
         # Use database constraint for duplicate detection (race-condition safe)
         try:
             Transaction.objects.create(
-                organization=self.organization,
+                organization=organization,
                 uploaded_by=self.user,
                 supplier=supplier,
                 category=category,
@@ -286,7 +367,7 @@ class CSVProcessor:
                 date=date,
                 upload_batch=self.batch_id,
                 invoice_number=invoice_number,
-                **{k: v for k, v in optional_data.items() if k != 'invoice_number'}
+                **optional_data
             )
         except IntegrityError:
             # Duplicate detected by database constraint

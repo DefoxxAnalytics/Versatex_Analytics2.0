@@ -241,5 +241,24 @@ GitHub Actions workflow runs on push/PR to master:
 - Security: Trivy vulnerability scanning
 
 Badges:
-- [![CI](https://github.com/DefoxxAnalytics/Versatex_Analytics/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/DefoxxAnalytics/Versatex_Analytics/actions/workflows/ci.yml)
-- [![Deploy](https://github.com/DefoxxAnalytics/Versatex_Analytics/actions/workflows/deploy.yml/badge.svg)](https://github.com/DefoxxAnalytics/Versatex_Analytics/actions/workflows/deploy.yml)
+- [![CI](https://github.com/DefoxxAnalytics/Versatex_Analytics2.0/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/DefoxxAnalytics/Versatex_Analytics2.0/actions/workflows/ci.yml)
+
+## Recent Updates (v2.0)
+
+### Dashboard Enhancements
+- **Data Refresh Button**: Manual refresh in header to pull latest data after admin uploads
+- **Export Functionality**: CSV export with role-based permissions (CanExport gate)
+- **Date Range Presets**: Quick presets (Last 7/30/90 days, This Year, Last Year)
+- **Skeleton Loaders**: Polished loading states for cards and charts
+- **Dark Mode Improvements**: ECharts fully respects dark/light theme
+- **Mobile Responsiveness**: Bottom sheet filter pane on mobile devices
+- **Drill-Down Charts**: Click chart segments to see detailed breakdowns
+- **Saved Filter Presets**: Save/load filter combinations (localStorage)
+- **Data Polling**: 60-second polling for new data notifications
+- **User Preferences Sync**: Settings sync to backend UserProfile model
+- **Chunk Optimization**: Vite manualChunks for better code splitting
+
+### Architecture
+- **Admin Panel Only**: Data uploads handled via Django Admin (no frontend upload)
+- **RBAC System**: Role-based access control with PermissionGate components
+- **HTTP-only Cookies**: JWT tokens stored in secure cookies for XSS protection

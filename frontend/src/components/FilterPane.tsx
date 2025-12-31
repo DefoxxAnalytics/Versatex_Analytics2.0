@@ -22,27 +22,48 @@
  */
 
 import { useState, useMemo } from 'react';
-import { X, Filter, RotateCcw } from 'lucide-react';
+import { X, Filter, RotateCcw, Bookmark, Trash2, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { MultiSelect } from '@/components/ui/multi-select';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import { useFilters, useUpdateFilters, useResetFilters, type Filters } from '@/hooks/useFilters';
 import { useProcurementData } from '@/hooks/useProcurementData';
+import { useFilterPresets, type FilterPreset } from '@/hooks/useFilterPresets';
+import { toast } from 'sonner';
 
 export function FilterPane() {
   const { data: filters } = useFilters() as { data: Filters | undefined };
   const { data: procurementData = [] } = useProcurementData();
   const updateFilters = useUpdateFilters();
   const resetFilters = useResetFilters();
+  const { presets, savePreset, deletePreset, nameExists } = useFilterPresets();
 
   // Local state for form inputs
   const [startDate, setStartDate] = useState(filters?.dateRange.start || '');
   const [endDate, setEndDate] = useState(filters?.dateRange.end || '');
   const [minAmount, setMinAmount] = useState(filters?.amountRange.min?.toString() || '');
   const [maxAmount, setMaxAmount] = useState(filters?.amountRange.max?.toString() || '');
+
+  // Preset dialog state
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [presetName, setPresetName] = useState('');
 
   // Get unique categories, suppliers, locations, and years from data
   const { uniqueCategories, uniqueSubcategories, uniqueSuppliers, uniqueLocations, uniqueYears } = useMemo(() => {
@@ -159,6 +180,45 @@ export function FilterPane() {
     setMaxAmount('');
   };
 
+  // Handle save preset
+  const handleSavePreset = () => {
+    if (!presetName.trim()) {
+      toast.error('Please enter a preset name');
+      return;
+    }
+    if (nameExists(presetName)) {
+      toast.error('A preset with this name already exists');
+      return;
+    }
+    if (!filters) return;
+
+    savePreset(presetName.trim(), filters);
+    toast.success(`Preset "${presetName}" saved`);
+    setPresetName('');
+    setSaveDialogOpen(false);
+  };
+
+  // Handle apply preset
+  const handleApplyPreset = (preset: FilterPreset) => {
+    // Update all filters from preset
+    updateFilters.mutate(preset.filters);
+
+    // Update local state
+    setStartDate(preset.filters.dateRange.start || '');
+    setEndDate(preset.filters.dateRange.end || '');
+    setMinAmount(preset.filters.amountRange.min?.toString() || '');
+    setMaxAmount(preset.filters.amountRange.max?.toString() || '');
+
+    toast.success(`Applied preset "${preset.name}"`);
+  };
+
+  // Handle delete preset
+  const handleDeletePreset = (preset: FilterPreset, e: React.MouseEvent) => {
+    e.stopPropagation();
+    deletePreset(preset.id);
+    toast.success(`Deleted preset "${preset.name}"`);
+  };
+
   if (!filters) return null;
 
   return (
@@ -173,24 +233,216 @@ export function FilterPane() {
             </Badge>
           )}
         </div>
-        {activeFilterCount > 0 && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleReset}
-            className="h-8 px-2"
-            aria-label="Reset all filters"
-          >
-            <RotateCcw className="h-4 w-4 mr-1" />
-            Reset
-          </Button>
-        )}
+        <div className="flex items-center gap-1">
+          {/* Presets Dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 px-2"
+                aria-label="Filter presets"
+              >
+                <Bookmark className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuItem onClick={() => setSaveDialogOpen(true)}>
+                <Bookmark className="h-4 w-4 mr-2" />
+                Save Current Filters
+              </DropdownMenuItem>
+              {presets.length > 0 && (
+                <>
+                  <DropdownMenuSeparator />
+                  {presets.map((preset) => (
+                    <DropdownMenuItem
+                      key={preset.id}
+                      onClick={() => handleApplyPreset(preset)}
+                      className="flex items-center justify-between group"
+                    >
+                      <span className="truncate">{preset.name}</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100"
+                        onClick={(e) => handleDeletePreset(preset, e)}
+                      >
+                        <Trash2 className="h-3 w-3 text-destructive" />
+                      </Button>
+                    </DropdownMenuItem>
+                  ))}
+                </>
+              )}
+              {presets.length === 0 && (
+                <div className="text-xs text-muted-foreground text-center py-2">
+                  No saved presets
+                </div>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Reset Button */}
+          {activeFilterCount > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleReset}
+              className="h-8 px-2"
+              aria-label="Reset all filters"
+            >
+              <RotateCcw className="h-4 w-4 mr-1" />
+              Reset
+            </Button>
+          )}
+        </div>
       </CardHeader>
+
+      {/* Save Preset Dialog */}
+      <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Save Filter Preset</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="preset-name">Preset Name</Label>
+              <Input
+                id="preset-name"
+                placeholder="e.g., Q1 2024 Analysis"
+                value={presetName}
+                onChange={(e) => setPresetName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleSavePreset();
+                  }
+                }}
+              />
+            </div>
+            <div className="text-sm text-muted-foreground">
+              <p>This will save:</p>
+              <ul className="list-disc list-inside mt-1 space-y-0.5">
+                {filters.dateRange.start && (
+                  <li>Date: {filters.dateRange.start} - {filters.dateRange.end || 'Now'}</li>
+                )}
+                {filters.categories.length > 0 && (
+                  <li>{filters.categories.length} categories</li>
+                )}
+                {filters.suppliers.length > 0 && (
+                  <li>{filters.suppliers.length} suppliers</li>
+                )}
+                {filters.locations.length > 0 && (
+                  <li>{filters.locations.length} locations</li>
+                )}
+                {(filters.amountRange.min !== null || filters.amountRange.max !== null) && (
+                  <li>Amount range filter</li>
+                )}
+                {activeFilterCount === 0 && (
+                  <li className="text-amber-600">No active filters</li>
+                )}
+              </ul>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSaveDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSavePreset}>
+              <Check className="h-4 w-4 mr-2" />
+              Save Preset
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <CardContent className="space-y-6">
         {/* Date Range Filter */}
         <div className="space-y-3">
           <Label className="text-sm font-medium">Date Range</Label>
+
+          {/* Quick Date Presets */}
+          <div className="flex flex-wrap gap-1.5">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs px-2"
+              onClick={() => {
+                const today = new Date();
+                const start = new Date(today);
+                start.setDate(start.getDate() - 7);
+                const startStr = start.toISOString().split('T')[0];
+                const endStr = today.toISOString().split('T')[0];
+                setStartDate(startStr);
+                setEndDate(endStr);
+                updateFilters.mutate({ dateRange: { start: startStr, end: endStr } });
+              }}
+            >
+              Last 7 days
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs px-2"
+              onClick={() => {
+                const today = new Date();
+                const start = new Date(today);
+                start.setDate(start.getDate() - 30);
+                const startStr = start.toISOString().split('T')[0];
+                const endStr = today.toISOString().split('T')[0];
+                setStartDate(startStr);
+                setEndDate(endStr);
+                updateFilters.mutate({ dateRange: { start: startStr, end: endStr } });
+              }}
+            >
+              Last 30 days
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs px-2"
+              onClick={() => {
+                const today = new Date();
+                const start = new Date(today);
+                start.setDate(start.getDate() - 90);
+                const startStr = start.toISOString().split('T')[0];
+                const endStr = today.toISOString().split('T')[0];
+                setStartDate(startStr);
+                setEndDate(endStr);
+                updateFilters.mutate({ dateRange: { start: startStr, end: endStr } });
+              }}
+            >
+              Last 90 days
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs px-2"
+              onClick={() => {
+                const year = new Date().getFullYear();
+                const startStr = `${year}-01-01`;
+                setStartDate(startStr);
+                setEndDate('');
+                updateFilters.mutate({ dateRange: { start: startStr, end: null } });
+              }}
+            >
+              This Year
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs px-2"
+              onClick={() => {
+                const year = new Date().getFullYear() - 1;
+                const startStr = `${year}-01-01`;
+                const endStr = `${year}-12-31`;
+                setStartDate(startStr);
+                setEndDate(endStr);
+                updateFilters.mutate({ dateRange: { start: startStr, end: endStr } });
+              }}
+            >
+              Last Year
+            </Button>
+          </div>
+
           <div className="space-y-2">
             <div>
               <Label htmlFor="start-date" className="text-xs text-gray-600">

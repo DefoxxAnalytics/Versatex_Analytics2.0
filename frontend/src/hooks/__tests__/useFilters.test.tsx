@@ -39,7 +39,10 @@ describe('useFilters', () => {
       expect(result.current.data).toEqual({
         dateRange: { start: null, end: null },
         categories: [],
+        subcategories: [],
         suppliers: [],
+        locations: [],
+        years: [],
         amountRange: { min: null, max: null },
       });
     });
@@ -49,7 +52,10 @@ describe('useFilters', () => {
     const savedFilters = {
       dateRange: { start: '2024-01-01', end: '2024-12-31' },
       categories: ['IT', 'Office Supplies'],
+      subcategories: [],
       suppliers: ['Acme Corp'],
+      locations: [],
+      years: [],
       amountRange: { min: 100, max: 10000 },
     };
 
@@ -166,7 +172,10 @@ describe('useResetFilters', () => {
     const savedFilters = {
       dateRange: { start: '2024-01-01', end: '2024-12-31' },
       categories: ['IT'],
+      subcategories: [],
       suppliers: ['Acme Corp'],
+      locations: [],
+      years: [],
       amountRange: { min: 100, max: 10000 },
     };
     localStorage.setItem('procurement_filters', JSON.stringify(savedFilters));
@@ -183,7 +192,10 @@ describe('useResetFilters', () => {
       expect(filtersResult.current.data).toEqual({
         dateRange: { start: null, end: null },
         categories: [],
+        subcategories: [],
         suppliers: [],
+        locations: [],
+        years: [],
         amountRange: { min: null, max: null },
       });
     });

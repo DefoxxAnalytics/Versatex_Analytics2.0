@@ -16,7 +16,7 @@ from .models import Organization, UserProfile, AuditLog
 from .serializers import (
     RegisterSerializer, LoginSerializer, UserSerializer,
     OrganizationSerializer, UserProfileSerializer,
-    ChangePasswordSerializer, AuditLogSerializer
+    ChangePasswordSerializer, AuditLogSerializer, UserPreferencesSerializer
 )
 from .permissions import IsAdmin, IsManager
 from .utils import (
@@ -387,3 +387,78 @@ class CookieTokenRefreshView(generics.GenericAPIView):
                 {'error': 'Invalid or expired refresh token'},
                 status=status.HTTP_401_UNAUTHORIZED
             )
+
+
+class UserPreferencesView(generics.GenericAPIView):
+    """
+    Get and update user preferences
+    Preferences are stored in the UserProfile.preferences JSONField
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class = UserPreferencesSerializer
+
+    def get(self, request):
+        """Get current user preferences."""
+        if not hasattr(request.user, 'profile'):
+            return Response(
+                {'error': 'User profile not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        return Response(request.user.profile.preferences or {})
+
+    def patch(self, request):
+        """Update user preferences (merge with existing)."""
+        if not hasattr(request.user, 'profile'):
+            return Response(
+                {'error': 'User profile not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        # Merge with existing preferences
+        profile = request.user.profile
+        current_prefs = profile.preferences or {}
+        current_prefs.update(serializer.validated_data)
+        profile.preferences = current_prefs
+        profile.save(update_fields=['preferences', 'updated_at'])
+
+        # Log action
+        log_action(
+            user=request.user,
+            action='update',
+            resource='user_preferences',
+            resource_id=str(profile.id),
+            request=request
+        )
+
+        return Response(profile.preferences)
+
+    def put(self, request):
+        """Replace all user preferences."""
+        if not hasattr(request.user, 'profile'):
+            return Response(
+                {'error': 'User profile not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        # Replace all preferences
+        profile = request.user.profile
+        profile.preferences = serializer.validated_data
+        profile.save(update_fields=['preferences', 'updated_at'])
+
+        # Log action
+        log_action(
+            user=request.user,
+            action='update',
+            resource='user_preferences',
+            resource_id=str(profile.id),
+            request=request
+        )
+
+        return Response(profile.preferences)

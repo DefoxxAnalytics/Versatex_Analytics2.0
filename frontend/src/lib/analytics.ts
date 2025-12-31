@@ -1,4 +1,4 @@
-import type { ProcurementRecord } from './csvParser';
+import type { ProcurementRecord } from '../hooks/useProcurementData';
 import type { Filters } from '../hooks/useFilters';
 
 /**

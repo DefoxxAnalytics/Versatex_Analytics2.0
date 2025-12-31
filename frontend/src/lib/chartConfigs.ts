@@ -7,7 +7,7 @@
  */
 
 import type { EChartsOption } from 'echarts';
-import type { ProcurementRecord } from './csvParser';
+import type { ProcurementRecord } from '../hooks/useProcurementData';
 
 /**
  * Generate Spend by Category Bar Chart configuration
